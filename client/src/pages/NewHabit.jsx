@@ -1,106 +1,166 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useHabits } from '../context/HabitContext'
+import { HABIT_COLORS, HABIT_ICONS, HABIT_CATEGORIES, colorToGlow } from '../utils/habitStats'
 
-// Page to create a new habit
+const DEFAULT_FORM = {
+  name: '',
+  icon: '📝',
+  category: 'General',
+  color: HABIT_COLORS[0],
+  frequency: 'daily',
+  xp: 10,
+}
+
 export default function NewHabit() {
   const navigate = useNavigate()
   const { addHabit } = useHabits()
-  
-  // Form state with default values
-  const [form, setForm] = useState({
-    name: '',                 // Habit name (required)
-    icon: '📝',              // Emoji icon
-    category: 'General',     // Habit category
-    color: '#888888',        // Color for the habit
-    frequency: 'daily',      // daily or weekly
-    xp: 10,                  // XP reward for completing
-  })
-  const [error, setError] = useState('')  // Error message
+  const [form, setForm] = useState(DEFAULT_FORM)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  // Update form field on input change
   const handleChange = (event) => {
     const { name, value } = event.target
-    setForm((prev) => ({ ...prev, [name]: value }))
+    setForm((prev) => ({
+      ...prev,
+      [name]: name === 'xp' ? Number(value) || 10 : value,
+    }))
   }
 
-  // Submit form to create new habit
+  const setColor = (color) => {
+    setForm((prev) => ({ ...prev, color }))
+  }
+
+  const setIcon = (icon) => {
+    setForm((prev) => ({ ...prev, icon }))
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
-    
-    // Validate habit name
     if (!form.name.trim()) {
       setError('Please enter a habit name.')
       return
     }
 
+    setSaving(true)
+    setError('')
+
     try {
-      // Add habit to context/state and localStorage
-      await addHabit(form)
-      // Navigate back to habits list
+      await addHabit({
+        ...form,
+        name: form.name.trim(),
+        glow: colorToGlow(form.color),
+      })
       navigate('/habits')
-    } catch (err) {
+    } catch {
       setError('Unable to add habit. Please try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
-    <div className="light-page screen-scroll">
-      {/* Page header */}
+    <div className="light-page screen-scroll new-habit-page">
       <header className="page-header">
+        <Link to="/habits" className="back-link" aria-label="Back">
+          ←
+        </Link>
         <h1>Add Habit</h1>
+        <span className="page-header-spacer" />
       </header>
 
-      {/* Form */}
-      <form className="card form-card" onSubmit={handleSubmit}>
-        {/* Error message */}
+      <div
+        className="habit-preview-card"
+        style={{
+          background: `${form.color}18`,
+          borderColor: `${form.color}44`,
+        }}
+      >
+        <div
+          className="habit-preview-icon"
+          style={{ background: `${form.color}28`, color: form.color }}
+        >
+          {form.icon}
+        </div>
+        <div className="habit-preview-text">
+          <strong>{form.name.trim() || 'New habit'}</strong>
+          <span>{form.category} · {form.frequency} · +{form.xp} XP</span>
+        </div>
+      </div>
+
+      <form className="form-card" onSubmit={handleSubmit}>
         {error && <p className="form-error">{error}</p>}
 
-        {/* Habit name field */}
         <label className="form-field">
-          <span>Name</span>
+          <span>Habit name</span>
           <input
             name="name"
             value={form.name}
             onChange={handleChange}
-            placeholder="Habit name"
+            placeholder="e.g. Drink water"
+            autoFocus
           />
         </label>
 
-        {/* Icon field */}
-        <label className="form-field">
+        <div className="form-field">
           <span>Icon</span>
-          <input
-            name="icon"
-            value={form.icon}
-            onChange={handleChange}
-            placeholder="Emoji icon"
-          />
-        </label>
+          <div className="icon-picker">
+            {HABIT_ICONS.map((icon) => (
+              <button
+                key={icon}
+                type="button"
+                className={`icon-option ${form.icon === icon ? 'selected' : ''}`}
+                style={
+                  form.icon === icon
+                    ? { background: `${form.color}28`, borderColor: form.color }
+                    : undefined
+                }
+                onClick={() => setIcon(icon)}
+                aria-label={`Icon ${icon}`}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        {/* Category field */}
         <label className="form-field">
           <span>Category</span>
-          <input
-            name="category"
-            value={form.category}
-            onChange={handleChange}
-            placeholder="Category"
-          />
+          <select name="category" value={form.category} onChange={handleChange}>
+            {HABIT_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
         </label>
 
-        {/* Color picker */}
-        <label className="form-field">
+        <div className="form-field">
           <span>Color</span>
-          <input
-            name="color"
-            type="color"
-            value={form.color}
-            onChange={handleChange}
-          />
-        </label>
+          <div className="color-picker">
+            {HABIT_COLORS.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                className={`color-swatch ${form.color === hex ? 'selected' : ''}`}
+                style={{ background: hex }}
+                onClick={() => setColor(hex)}
+                aria-label={`Color ${hex}`}
+              />
+            ))}
+          </div>
+          <label className="custom-color-row">
+            <span>Custom</span>
+            <input
+              name="color"
+              type="color"
+              value={form.color}
+              onChange={handleChange}
+            />
+            <code>{form.color}</code>
+          </label>
+        </div>
 
-        {/* Frequency dropdown */}
         <label className="form-field">
           <span>Frequency</span>
           <select name="frequency" value={form.frequency} onChange={handleChange}>
@@ -109,22 +169,20 @@ export default function NewHabit() {
           </select>
         </label>
 
-        {/* XP reward field */}
         <label className="form-field">
-          <span>XP Reward</span>
+          <span>XP reward</span>
           <input
             type="number"
             name="xp"
             value={form.xp}
             onChange={handleChange}
-            placeholder="XP points"
-            min="1"
+            min={1}
+            max={100}
           />
         </label>
 
-        {/* Submit button */}
-        <button type="submit" className="primary-btn">
-          Save Habit
+        <button type="submit" className="primary-btn" disabled={saving}>
+          {saving ? 'Saving…' : 'Save Habit'}
         </button>
       </form>
     </div>

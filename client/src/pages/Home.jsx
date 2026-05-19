@@ -1,18 +1,33 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useHabits } from '../context/HabitContext'
+import {
+  buildMonthCalendar,
+  filterDailyHabits,
+  getMonthPerfectDays,
+} from '../utils/habitStats'
 
-// Get today's date in YYYY-MM-DD format
-const getToday = () => new Date().toISOString().split('T')[0]
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
-// Home page - displays user profile, stats, and today's habits
 export default function Home() {
-  const { user, habits, toggleHabit } = useHabits()
-  const xpPercent = Math.round((user.xp / user.xpMax) * 100)
-  const today = getToday()
+  const { user, habits, toggleHabit, isCompletedToday, getCurrentStreak } = useHabits()
+
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const monthLabel = now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
+  const dailyHabits = useMemo(() => filterDailyHabits(habits), [habits])
+  const monthCalendar = useMemo(() => buildMonthCalendar(habits, year, month), [habits, year, month])
+  const monthPerfectDays = useMemo(() => getMonthPerfectDays(habits, year, month), [habits, year, month])
+
+  const xpPercent = user.xpMax ? Math.round((user.xp / user.xpMax) * 100) : 0
+  const budgetPercent = user.monthlyXpPercent ?? 0
+  const completedToday = dailyHabits.filter(isCompletedToday).length
+  const xpToNext = user.xpMax - user.xp
 
   return (
     <div className="light-page screen-scroll">
-      {/* Hero header with greeting */}
       <header className="hero-header">
         <div className="header-row">
           <div>
@@ -25,7 +40,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* User profile card with XP bar */}
       <div className="profile-card">
         <div className="avatar">{user.avatar}</div>
         <div className="info">
@@ -33,11 +47,13 @@ export default function Home() {
             {user.fullName}
             <span className="rank-badge">{user.rank}</span>
           </div>
-          <p className="meta">Level {user.level}</p>
+          <p className="meta">
+            Level {user.level} · {xpToNext} XP to next level
+          </p>
           <div className="xp-bar-wrap">
             <div className="xp-bar-labels">
-              <span>{user.xp.toLocaleString()} XP</span>
-              <span>{user.xpMax.toLocaleString()}</span>
+              <span>{user.xp.toLocaleString()} / {user.xpMax.toLocaleString()} XP</span>
+              <span>{user.totalXp.toLocaleString()} total</span>
             </div>
             <div className="xp-bar">
               <div className="xp-bar-fill" style={{ width: `${xpPercent}%` }} />
@@ -46,55 +62,102 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Quick stats - day streak, total XP, badges */}
       <div className="quick-stats">
-        <Link to="/habits" className="stat-box" style={{ textDecoration: 'none' }}>
-          <div className="val">{user.dayStreak}</div>
-          <div className="lbl">Day Streak</div>
-        </Link>
         <div className="stat-box">
-          <div className="val">{user.totalXp.toLocaleString()}</div>
-          <div className="lbl">Total XP</div>
+          <div className="val">{user.monthStreak ?? 0}</div>
+          <div className="lbl">Month Streak</div>
         </div>
-        <Link to="/badges" className="stat-box" style={{ textDecoration: 'none' }}>
-          <div className="val">{user.badgesUnlocked}</div>
-          <div className="lbl">Badges</div>
-        </Link>
+        <div className="stat-box">
+          <div className="val">{monthPerfectDays}</div>
+          <div className="lbl">Perfect Days</div>
+        </div>
+        <div className="stat-box">
+          <div className="val">{completedToday}/{dailyHabits.length || 0}</div>
+          <div className="lbl">Done Today</div>
+        </div>
       </div>
 
-      {/* Today's habits section */}
-      <h2 className="section-title">Today&apos;s Habits</h2>
-      {habits.length === 0 && (
+      <section className="home-section">
+        <h2 className="section-title">Monthly XP Budget</h2>
+        <article className="budget-card">
+          <div className="budget-header">
+            <span>{monthLabel}</span>
+            <strong>{budgetPercent}%</strong>
+          </div>
+          <div className="budget-bar">
+            <div className="budget-bar-fill" style={{ width: `${budgetPercent}%` }} />
+          </div>
+          <div className="budget-meta">
+            <span>{user.monthlyXpEarned?.toLocaleString() ?? 0} earned</span>
+            <span>{user.monthlyXpBudget?.toLocaleString() ?? 0} goal</span>
+          </div>
+        </article>
+      </section>
+
+      <section className="home-section">
+        <h2 className="section-title">{monthLabel} Streaks</h2>
+        <article className="month-calendar-card">
+          <div className="month-weekdays">
+            {WEEKDAYS.map((label, index) => (
+              <span key={`${label}-${index}`}>{label}</span>
+            ))}
+          </div>
+          <div className="month-grid">
+            {Array.from({ length: monthCalendar.firstWeekday }).map((_, index) => (
+              <span key={`pad-${index}`} className="month-day empty" />
+            ))}
+            {monthCalendar.days.map((day) => (
+              <span
+                key={day.key}
+                className={`month-day ${day.status} ${day.isToday ? 'today' : ''}`}
+                title={
+                  day.isFuture
+                    ? 'Upcoming'
+                    : `${day.completedCount}/${day.total} daily habits`
+                }
+              >
+                {day.day}
+              </span>
+            ))}
+          </div>
+          <div className="month-legend">
+            <span><i className="dot perfect" /> All daily habits</span>
+            <span><i className="dot partial" /> Partial</span>
+            <span><i className="dot none" /> Missed</span>
+          </div>
+        </article>
+      </section>
+
+      <h2 className="section-title">Daily Habits</h2>
+      {dailyHabits.length === 0 && (
         <p style={{ padding: '0 16px', color: '#666' }}>
-          No habits yet. Add one to start tracking your daily progress.
+          No daily habits yet.{' '}
+          <Link to="/habits/new">Add one</Link> to start your streak.
         </p>
       )}
-      {habits.map((habit) => {
-        // Check if this habit is completed today
-        const isCompletedToday = habit.completedDates?.includes(today) ?? false
+      {dailyHabits.map((habit) => {
+        const doneToday = isCompletedToday(habit)
+        const streak = getCurrentStreak(habit.completedDates)
         return (
           <Link key={habit.id} to={`/habits/${habit.id}`} className="habit-row">
-            {/* Habit icon box */}
             <div className="icon-wrap" style={{ background: `${habit.color}22` }}>
               {habit.icon}
             </div>
-            
-            {/* Habit name and category */}
             <div>
-              <div className="title">{habit.name}</div>
-              <div className="cat">{habit.category}</div>
+              <div className={`title ${doneToday ? 'done-today' : ''}`}>{habit.name}</div>
+              <div className="cat">
+                {habit.category} · {streak} day streak · +{habit.xp} XP
+              </div>
             </div>
-            
-            {/* Toggle button - shows checkmark if completed today */}
             <button
               type="button"
-              className={`check ${isCompletedToday ? 'done' : ''}`}
+              className={`check ${doneToday ? 'done' : ''}`}
               onClick={(e) => {
                 e.preventDefault()
                 toggleHabit(habit.id)
               }}
             >
-              {isCompletedToday ? '✓' : ''}
+              {doneToday ? '✓' : ''}
             </button>
           </Link>
         )

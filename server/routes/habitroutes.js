@@ -88,21 +88,41 @@ router.get('/:id', (req, res) => {
   res.json(habit);
 });
 
+const getCurrentStreak = (completedDates = []) => {
+  const dates = [...new Set(completedDates)];
+  const today = new Date();
+  let streak = 0;
+
+  for (let offset = 0; ; offset += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    const key = date.toISOString().split('T')[0];
+    if (!dates.includes(key)) break;
+    streak += 1;
+  }
+
+  return streak;
+};
+
 router.patch('/:id/toggle', (req, res) => {
   const habit = habits.find((item) => item.id === req.params.id);
   if (!habit) {
     return res.status(404).json({ message: 'Habit not found' });
   }
 
-  habit.completed = !habit.completed;
+  const today = getToday();
+  const completedDates = [...(habit.completedDates || [])];
+  const todayIndex = completedDates.indexOf(today);
 
-  if (habit.completed) {
-    habit.streak += 1;
-    const today = getToday();
-    if (!habit.completedDates.includes(today)) {
-      habit.completedDates.push(today);
-    }
+  if (todayIndex > -1) {
+    completedDates.splice(todayIndex, 1);
+  } else {
+    completedDates.push(today);
   }
+
+  habit.completedDates = completedDates;
+  habit.streak = getCurrentStreak(completedDates);
+  habit.completed = completedDates.includes(today);
 
   res.json(habit);
 });
@@ -115,8 +135,11 @@ router.patch('/:id', (req, res) => {
 
   Object.assign(habit, req.body);
 
-  if (req.body.completed === true && !habit.completedDates.includes(getToday())) {
-    habit.completedDates.push(getToday());
+  const today = getToday();
+  if (req.body.markComplete === true && !habit.completedDates.includes(today)) {
+    habit.completedDates.push(today);
+    habit.streak = getCurrentStreak(habit.completedDates);
+    habit.completed = true;
   }
 
   res.json(habit);

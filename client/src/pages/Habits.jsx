@@ -2,36 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useHabits } from '../context/HabitContext'
 
-// Filter options for habits
 const FILTERS = ['All', 'Daily', 'Weekly']
-
-// Get today's date in YYYY-MM-DD format
-const getToday = () => new Date().toISOString().split('T')[0]
-
-// Calculate current streak (consecutive days of completion)
-const getCurrentStreak = (completedDates = []) => {
-  const dates = [...new Set(completedDates)].sort()
-  const today = new Date()
-  const toKey = (date) => date.toISOString().split('T')[0]
-  let streak = 0
-
-  // Count backward from today until we find a day without completion
-  for (let offset = 0; ; offset += 1) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - offset)
-    const key = toKey(date)
-    if (!dates.includes(key)) break
-    streak += 1
-  }
-
-  return streak
-}
 
 export default function Habits() {
   const navigate = useNavigate()
-  const { habits, toggleHabit } = useHabits()
-  const [filter, setFilter] = useState('All')  // Current filter state
-  const today = getToday()
+  const { habits, toggleHabit, isCompletedToday, getCurrentStreak } = useHabits()
+  const [filter, setFilter] = useState('All')
 
   // Filter habits based on selected filter
   const filtered = habits.filter((h) => {
@@ -70,9 +46,8 @@ export default function Habits() {
 
       {/* Habit list */}
       {filtered.map((habit) => {
-        // Check if this habit is completed today
-        const isCompletedToday = habit.completedDates?.includes(today) ?? false
-        
+        const doneToday = isCompletedToday(habit)
+
         return (
           <Link key={habit.id} to={`/habits/${habit.id}`} className="habit-list-card">
             {/* Habit icon */}
@@ -103,13 +78,13 @@ export default function Habits() {
             {/* Toggle button - shows checkmark if completed today */}
             <button
               type="button"
-              className={`big-toggle ${isCompletedToday ? 'on' : ''}`}
+              className={`big-toggle ${doneToday ? 'on' : ''}`}
               onClick={(e) => {
                 e.preventDefault()
                 toggleHabit(habit.id)
               }}
             >
-              {isCompletedToday ? '✓' : ''}
+              {doneToday ? '✓' : ''}
             </button>
           </Link>
         )

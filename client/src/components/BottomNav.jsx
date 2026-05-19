@@ -10,9 +10,7 @@ const links = [
 export default function BottomNav({ dark = false }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const hide = location.pathname.startsWith('/habits/')
-
-  if (hide) return null
+  if (location.pathname.startsWith('/habits/') || location.pathname === '/sign') return null
 
   return (
     <nav className={`bottom-nav ${dark ? 'dark' : ''}`}>
