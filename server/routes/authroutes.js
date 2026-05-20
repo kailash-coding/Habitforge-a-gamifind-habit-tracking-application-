@@ -2,30 +2,34 @@
 const bcrypt = require('bcrypt');
 const { createOtp, verifyOtp } = require('../services/otpStore');
 const { sendOtpEmail } = require('../services/emailService');
+const User = require('../models/User');
 
 const router = express.Router();
-const users = [];
 
 const normalizeEmail = (email) => email.trim().toLowerCase();
 
-const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidEmail = (email) => /^[^\s@]+@gmail\.com$/i.test(email);
 
 const publicUser = (user) => ({
-  id: user.id,
+  id: user._id.toString(),
   name: user.name,
   email: user.email,
 });
 
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   const userId = req.headers['x-user-id'];
   if (!userId) {
     return res.json({ loggedIn: false, user: null });
   }
-  const user = users.find((item) => item.id === userId);
-  if (!user) {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.json({ loggedIn: false, user: null });
+    }
+    return res.json({ loggedIn: true, user: publicUser(user) });
+  } catch {
     return res.json({ loggedIn: false, user: null });
   }
-  res.json({ loggedIn: true, user: publicUser(user) });
 });
 
 router.post('/otp/send', async (req, res) => {
@@ -40,7 +44,7 @@ router.post('/otp/send', async (req, res) => {
       return res.status(400).json({ message: 'Invalid verification type.' });
     }
 
-    const existing = users.find((u) => u.email === normalizedEmail);
+    const existing = await User.findOne({ email: normalizedEmail });
 
     if (purpose === 'signup') {
       if (!name?.trim()) {
@@ -91,25 +95,24 @@ router.post('/otp/verify', async (req, res) => {
       return res.status(400).json({ message: result.message });
     }
 
-    let user = users.find((u) => u.email === normalizedEmail);
+    let user = await User.findOne({ email: normalizedEmail });
 
     if (purpose === 'signup') {
       if (user) {
         return res.status(409).json({ message: 'Email already registered.' });
       }
-      user = {
-        id: `user_${Date.now()}`,
+      user = await User.create({
         name: result.meta.name,
         email: normalizedEmail,
         emailVerified: true,
         passwordHash: null,
-      };
-      users.push(user);
+      });
     } else {
       if (!user) {
         return res.status(404).json({ message: 'Account not found.' });
       }
       user.emailVerified = true;
+      await user.save();
     }
 
     res.json({ user: publicUser(user) });
@@ -124,24 +127,22 @@ router.post('/register', async (req, res) => {
     if (!name?.trim() || !email?.trim() || !password) {
       return res.status(400).json({ message: 'Please fill in all fields.' });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
-    }
 
     const normalizedEmail = normalizeEmail(email);
-    if (users.some((item) => item.email === normalizedEmail)) {
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ message: 'Enter a valid @gmail.com email.' });
+    }
+    if (await User.findOne({ email: normalizedEmail })) {
       return res.status(409).json({ message: 'Email already registered.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = {
-      id: `user_${Date.now()}`,
+    const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       passwordHash,
       emailVerified: false,
-    };
-    users.push(user);
+    });
 
     res.status(201).json({ user: publicUser(user) });
   } catch {
@@ -156,17 +157,20 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Please enter email and password.' });
     }
 
-    const user = users.find((item) => item.email === normalizeEmail(email));
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
-    }
-    if (!user.passwordHash) {
-      return res.status(401).json({ message: 'This account uses email OTP. Switch to Email OTP to sign in.' });
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ message: 'Enter a valid @gmail.com email.' });
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+    let user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      user = await User.create({
+        name: normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        passwordHash,
+        emailVerified: true,
+      });
     }
 
     res.json({ user: publicUser(user) });

@@ -221,9 +221,8 @@ export default function Sign() {
                 type="password"
                 value={form.password}
                 onChange={handleChange}
-                placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                placeholder="Your password"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                minLength={mode === 'signup' ? 6 : undefined}
                 required
               />
             </label>

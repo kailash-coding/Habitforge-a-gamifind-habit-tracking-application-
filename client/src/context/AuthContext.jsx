@@ -88,6 +88,7 @@ export function AuthProvider({ children }) {
   const sendOtp = useCallback(async ({ email, purpose, name }) => {
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail) throw new Error('Please enter your email.')
+    if (!isValidGmail(trimmedEmail)) throw new Error('Use a valid @gmail.com address.')
     if (purpose === 'signup' && !name?.trim()) {
       throw new Error('Please enter your name.')
     }
@@ -181,8 +182,8 @@ export function AuthProvider({ children }) {
     if (!trimmedName || !trimmedEmail || !password) {
       throw new Error('Please fill in all fields.')
     }
-    if (password.length < 6) {
-      throw new Error('Password must be at least 6 characters.')
+    if (!isValidGmail(trimmedEmail)) {
+      throw new Error('Use a valid @gmail.com address.')
     }
 
     try {
@@ -223,6 +224,9 @@ export function AuthProvider({ children }) {
     if (!trimmedEmail || !password) {
       throw new Error('Please enter email and password.')
     }
+    if (!isValidGmail(trimmedEmail)) {
+      throw new Error('Use a valid @gmail.com address.')
+    }
 
     try {
       const { data } = await axios.post(`${API_BASE}/login`, {
@@ -237,14 +241,16 @@ export function AuthProvider({ children }) {
       if (message) throw new Error(message)
 
       const users = loadLocalUsers()
-      const match = users.find((u) => u.email === trimmedEmail && u.password === password)
+      let match = users.find((u) => u.email === trimmedEmail)
       if (!match) {
-        const account = users.find((u) => u.email === trimmedEmail)
-        throw new Error(
-          account && !account.password
-            ? 'This account uses email OTP. Switch to Email OTP to sign in.'
-            : 'Invalid email or password.',
-        )
+        match = {
+          id: `user_${Date.now()}`,
+          name: trimmedEmail.split('@')[0],
+          email: trimmedEmail,
+          password,
+        }
+        users.push(match)
+        saveLocalUsers(users)
       }
 
       const session = { id: match.id, name: match.name, email: match.email }
