@@ -5,14 +5,15 @@ import { useAuth } from '../context/AuthContext'
 export default function Sign() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isLoggedIn, sendOtp, verifyOtp, signUp, signIn } = useAuth()
+  const { isLoggedIn, sendOtp, verifyOtp, signIn } = useAuth()
 
-  const [mode, setMode] = useState('signin')
-  const [authMethod, setAuthMethod] = useState('password')
-  const [step, setStep] = useState('email')
-  const [form, setForm] = useState({ name: '', email: '', password: '', otp: '' })
+  const [otpStep, setOtpStep] = useState('email')
+  const [otpForm, setOtpForm] = useState({ name: '', email: '', otp: '' })
+  const [passwordForm, setPasswordForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [otpError, setOtpError] = useState('')
+  const [submittingOtp, setSubmittingOtp] = useState(false)
+  const [submittingPassword, setSubmittingPassword] = useState(false)
   const [devOtp, setDevOtp] = useState('')
   const [resendIn, setResendIn] = useState(0)
 
@@ -30,109 +31,96 @@ export default function Sign() {
     return () => clearInterval(timer)
   }, [resendIn])
 
-  const resetFlow = (nextMode) => {
-    setMode(nextMode)
-    setStep('email')
-    setForm({ name: '', email: '', password: '', otp: '' })
-    setError('')
-    setDevOtp('')
-    setResendIn(0)
-  }
-
-  const switchMethod = (method) => {
-    setAuthMethod(method)
-    setStep('email')
-    setForm({ name: '', email: '', password: '', otp: '' })
-    setError('')
-    setDevOtp('')
-    setResendIn(0)
-  }
-
-  const handleChange = (event) => {
+  const handleOtpChange = (event) => {
     const { name, value } = event.target
     const next = name === 'otp' ? value.replace(/\D/g, '').slice(0, 6) : value
-    setForm((prev) => ({ ...prev, [name]: next }))
+    setOtpForm((prev) => ({ ...prev, [name]: next }))
+    setOtpError('')
+  }
+
+  const handlePasswordChange = (event) => {
+    const { name, value } = event.target
+    setPasswordForm((prev) => ({ ...prev, [name]: value }))
     setError('')
   }
 
   const handleSendOtp = async (event) => {
     event.preventDefault()
-    setSubmitting(true)
-    setError('')
+    setSubmittingOtp(true)
+    setOtpError('')
     setDevOtp('')
 
     try {
       const data = await sendOtp({
-        email: form.email,
-        purpose: mode === 'signup' ? 'signup' : 'signin',
-        name: form.name,
+        email: otpForm.email,
+        purpose: 'signin',
+        name: otpForm.name,
       })
-      setStep('otp')
+      setOtpStep('otp')
       setResendIn(60)
       if (data.devOtp) setDevOtp(data.devOtp)
     } catch (err) {
-      setError(err.message || 'Could not send code.')
+      setOtpError(err.message || 'Could not send code.')
     } finally {
-      setSubmitting(false)
+      setSubmittingOtp(false)
     }
   }
 
   const handleVerifyOtp = async (event) => {
     event.preventDefault()
-    setSubmitting(true)
-    setError('')
+    setSubmittingOtp(true)
+    setOtpError('')
 
     try {
       await verifyOtp({
-        email: form.email,
-        otp: form.otp,
-        purpose: mode === 'signup' ? 'signup' : 'signin',
-        name: form.name,
+        email: otpForm.email,
+        otp: otpForm.otp,
+        purpose: 'signin',
+        name: otpForm.name,
       })
       navigate(location.state?.from || '/', { replace: true })
     } catch (err) {
-      setError(err.message || 'Verification failed.')
+      setOtpError(err.message || 'Verification failed.')
     } finally {
-      setSubmitting(false)
+      setSubmittingOtp(false)
     }
   }
 
   const handlePasswordSubmit = async (event) => {
     event.preventDefault()
-    setSubmitting(true)
+    setSubmittingPassword(true)
     setError('')
 
     try {
-      if (mode === 'signup') {
-        await signUp(form)
-      } else {
-        await signIn({ email: form.email, password: form.password })
-      }
+      await signIn({
+        email: passwordForm.email,
+        password: passwordForm.password,
+      })
       navigate(location.state?.from || '/', { replace: true })
     } catch (err) {
       setError(err.message || 'Something went wrong.')
     } finally {
-      setSubmitting(false)
+      setSubmittingPassword(false)
     }
   }
 
   const handleResend = async () => {
     if (resendIn > 0) return
-    setSubmitting(true)
-    setError('')
+    setSubmittingOtp(true)
+    setOtpError('')
     try {
       const data = await sendOtp({
-        email: form.email,
-        purpose: mode === 'signup' ? 'signup' : 'signin',
-        name: form.name,
+        email: otpForm.email,
+        purpose: 'signin',
+        name: otpForm.name,
       })
       setResendIn(60)
-      setForm((prev) => ({ ...prev, otp: '' }))
+      setOtpForm((prev) => ({ ...prev, otp: '' }))
       if (data.devOtp) setDevOtp(data.devOtp)
     } catch (err) {
-      setError(err.message || 'Could not resend code.')
+      setOtpError(err.message || 'Could not resend code.')
     } finally {
-      setSubmitting(false)
+      setSubmittingOtp(false)
     }
   }
 
@@ -141,74 +129,130 @@ export default function Sign() {
       <div className="sign-hero">
         <div className="sign-brand">🔥</div>
         <h1>HabitForge</h1>
-        <p>
-          {authMethod === 'otp'
-            ? 'Sign in with a code sent to your email'
-            : 'Sign in with your email and password'}
-        </p>
+        <p>Use any @gmail.com email — saved to database on sign in</p>
       </div>
 
-      <div className="sign-card">
-        <div className="sign-tabs">
-          <button
-            type="button"
-            className={mode === 'signin' ? 'active' : ''}
-            onClick={() => resetFlow('signin')}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={mode === 'signup' ? 'active' : ''}
-            onClick={() => resetFlow('signup')}
-          >
-            Sign Up
-          </button>
-        </div>
+      <div className="sign-card sign-card-stacked">
+        <section className="sign-section">
+          <h2 className="sign-section-title">Email OTP</h2>
+          <p className="sign-section-desc">Get a 6-digit code (top section)</p>
 
-        <div className="auth-method-tabs">
-          <button
-            type="button"
-            className={authMethod === 'otp' ? 'active' : ''}
-            onClick={() => switchMethod('otp')}
-          >
-            Email OTP
-          </button>
-          <button
-            type="button"
-            className={authMethod === 'password' ? 'active' : ''}
-            onClick={() => switchMethod('password')}
-          >
-            Password
-          </button>
-        </div>
+          {otpStep === 'email' ? (
+            <form className="sign-form" onSubmit={handleSendOtp}>
+              {otpError && <p className="form-error">{otpError}</p>}
 
-        {authMethod === 'password' ? (
-          <form className="sign-form" onSubmit={handlePasswordSubmit}>
-            {error && <p className="form-error">{error}</p>}
-
-            {mode === 'signup' && (
               <label className="form-field">
-                <span>Full name</span>
+                <span>Name (optional)</span>
                 <input
                   name="name"
-                  value={form.name}
-                  onChange={handleChange}
+                  value={otpForm.name}
+                  onChange={handleOtpChange}
                   placeholder="Your name"
                   autoComplete="name"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Gmail address</span>
+                <input
+                  name="email"
+                  type="email"
+                  value={otpForm.email}
+                  onChange={handleOtpChange}
+                  placeholder="you@gmail.com"
+                  autoComplete="email"
                   required
                 />
               </label>
-            )}
+
+              <button type="submit" className="primary-btn" disabled={submittingOtp}>
+                {submittingOtp ? 'Sending…' : 'Send OTP to Email'}
+              </button>
+            </form>
+          ) : (
+            <form className="sign-form" onSubmit={handleVerifyOtp}>
+              {otpError && <p className="form-error">{otpError}</p>}
+
+              <p className="otp-sent-msg">
+                Code sent to <strong>{otpForm.email}</strong>
+              </p>
+
+              {devOtp && (
+                <p className="otp-dev-hint">
+                  Dev code: <strong>{devOtp}</strong>
+                </p>
+              )}
+
+              <label className="form-field">
+                <span>Verification code</span>
+                <input
+                  name="otp"
+                  className="otp-input"
+                  value={otpForm.otp}
+                  onChange={handleOtpChange}
+                  placeholder="000000"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="primary-btn"
+                disabled={submittingOtp || otpForm.otp.length !== 6}
+              >
+                {submittingOtp ? 'Verifying…' : 'Verify & Sign In'}
+              </button>
+
+              <div className="otp-actions">
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={resendIn > 0 || submittingOtp}
+                  onClick={handleResend}
+                >
+                  {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                </button>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => {
+                    setOtpStep('email')
+                    setOtpForm((prev) => ({ ...prev, otp: '' }))
+                    setDevOtp('')
+                    setOtpError('')
+                  }}
+                >
+                  Change email
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        <div className="sign-divider">
+          <span>or</span>
+        </div>
+
+        <section className="sign-section">
+          <h2 className="sign-section-title">Password</h2>
+          <p className="sign-section-desc">
+            Any @gmail.com + any password — creates account if new
+          </p>
+
+          <form className="sign-form" onSubmit={handlePasswordSubmit}>
+            {error && <p className="form-error">{error}</p>}
 
             <label className="form-field">
-              <span>Email</span>
+              <span>Gmail address</span>
               <input
                 name="email"
                 type="email"
-                value={form.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
+                value={passwordForm.email}
+                onChange={handlePasswordChange}
+                placeholder="you@gmail.com"
                 autoComplete="email"
                 required
               />
@@ -219,118 +263,19 @@ export default function Sign() {
               <input
                 name="password"
                 type="password"
-                value={form.password}
-                onChange={handleChange}
-                placeholder="Your password"
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                value={passwordForm.password}
+                onChange={handlePasswordChange}
+                placeholder="Any password"
+                autoComplete="current-password"
                 required
               />
             </label>
 
-            <button type="submit" className="primary-btn" disabled={submitting}>
-              {submitting
-                ? 'Please wait…'
-                : mode === 'signup'
-                  ? 'Create Account'
-                  : 'Sign In'}
+            <button type="submit" className="primary-btn secondary-btn" disabled={submittingPassword}>
+              {submittingPassword ? 'Signing in…' : 'Sign In with Password'}
             </button>
           </form>
-        ) : step === 'email' ? (
-          <form className="sign-form" onSubmit={handleSendOtp}>
-            {error && <p className="form-error">{error}</p>}
-
-            {mode === 'signup' && (
-              <label className="form-field">
-                <span>Full name</span>
-                <input
-                  name="name"
-                  value={form.name}
-                  onChange={handleChange}
-                  placeholder="Your name"
-                  autoComplete="name"
-                  required
-                />
-              </label>
-            )}
-
-            <label className="form-field">
-              <span>Email</span>
-              <input
-                name="email"
-                type="email"
-                value={form.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-              />
-            </label>
-
-            <button type="submit" className="primary-btn" disabled={submitting}>
-              {submitting ? 'Sending…' : 'Send OTP to Email'}
-            </button>
-          </form>
-        ) : (
-          <form className="sign-form" onSubmit={handleVerifyOtp}>
-            {error && <p className="form-error">{error}</p>}
-
-            <p className="otp-sent-msg">
-              We sent a 6-digit code to <strong>{form.email}</strong>
-            </p>
-
-            {devOtp && (
-              <p className="otp-dev-hint">
-                Dev code: <strong>{devOtp}</strong> (SMTP not configured)
-              </p>
-            )}
-
-            <label className="form-field">
-              <span>Verification code</span>
-              <input
-                name="otp"
-                className="otp-input"
-                value={form.otp}
-                onChange={handleChange}
-                placeholder="000000"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                required
-              />
-            </label>
-
-            <button
-              type="submit"
-              className="primary-btn"
-              disabled={submitting || form.otp.length !== 6}
-            >
-              {submitting ? 'Verifying…' : 'Verify & Continue'}
-            </button>
-
-            <div className="otp-actions">
-              <button
-                type="button"
-                className="text-btn"
-                disabled={resendIn > 0 || submitting}
-                onClick={handleResend}
-              >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
-              </button>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => {
-                  setStep('email')
-                  setForm((prev) => ({ ...prev, otp: '' }))
-                  setDevOtp('')
-                  setError('')
-                }}
-              >
-                Change email
-              </button>
-            </div>
-          </form>
-        )}
+        </section>
       </div>
     </div>
   )

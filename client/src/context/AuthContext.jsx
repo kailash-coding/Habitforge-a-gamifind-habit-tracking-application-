@@ -8,6 +8,8 @@ const LOCAL_USERS_KEY = 'habits_app_users'
 const LOCAL_OTP_KEY = 'habits_app_otp'
 const API_BASE = 'http://localhost:5000/api/auth'
 
+const isValidGmail = (email) => /^[^\s@]+@gmail\.com$/i.test(email.trim().toLowerCase())
+
 const loadSession = () => {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
@@ -59,6 +61,25 @@ const getLocalOtp = (email, purpose) => {
 
 const generateLocalOtp = () => String(Math.floor(100000 + Math.random() * 900000))
 
+const upsertLocalUser = (email, password, name) => {
+  const users = loadLocalUsers()
+  let user = users.find((u) => u.email === email)
+  if (!user) {
+    user = {
+      id: `user_${Date.now()}`,
+      name: name || email.split('@')[0],
+      email,
+      password: String(password),
+    }
+    users.push(user)
+  } else {
+    user.password = String(password)
+    if (name) user.name = name
+  }
+  saveLocalUsers(users)
+  return user
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(loadSession)
   const [loading, setLoading] = useState(true)
@@ -88,7 +109,7 @@ export function AuthProvider({ children }) {
   const sendOtp = useCallback(async ({ email, purpose, name }) => {
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail) throw new Error('Please enter your email.')
-    if (!isValidGmail(trimmedEmail)) throw new Error('Use a valid @gmail.com address.')
+    if (!isValidGmail(trimmedEmail)) throw new Error('Email must end with @gmail.com')
     if (purpose === 'signup' && !name?.trim()) {
       throw new Error('Please enter your name.')
     }
@@ -104,14 +125,6 @@ export function AuthProvider({ children }) {
     } catch (err) {
       const message = err.response?.data?.message
       if (message) throw new Error(message)
-
-      const users = loadLocalUsers()
-      if (purpose === 'signup' && users.some((u) => u.email === trimmedEmail)) {
-        throw new Error('Email already registered. Sign in instead.')
-      }
-      if (purpose === 'signin' && !users.some((u) => u.email === trimmedEmail)) {
-        throw new Error('No account found. Sign up first.')
-      }
 
       const code = generateLocalOtp()
       saveLocalOtp({ email: trimmedEmail, purpose, name: name?.trim(), code })
@@ -150,22 +163,11 @@ export function AuthProvider({ children }) {
         throw new Error('Invalid or expired code.')
       }
 
-      const users = loadLocalUsers()
-      let account = users.find((u) => u.email === trimmedEmail)
-
-      if (purpose === 'signup') {
-        if (account) throw new Error('Email already registered.')
-        account = {
-          id: `user_${Date.now()}`,
-          name: name?.trim() || stored.name,
-          email: trimmedEmail,
-        }
-        users.push(account)
-        saveLocalUsers(users)
-      } else if (!account) {
-        throw new Error('Account not found.')
-      }
-
+      const account = upsertLocalUser(
+        trimmedEmail,
+        '',
+        name?.trim() || stored.name,
+      )
       localStorage.removeItem(LOCAL_OTP_KEY)
       const session = { id: account.id, name: account.name, email: account.email }
       saveSession(session)
@@ -176,19 +178,17 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signUp = useCallback(async ({ name, email, password }) => {
-    const trimmedName = name.trim()
     const trimmedEmail = email.trim().toLowerCase()
-
-    if (!trimmedName || !trimmedEmail || !password) {
-      throw new Error('Please fill in all fields.')
+    if (!trimmedEmail || password === undefined || password === '') {
+      throw new Error('Enter email and password.')
     }
     if (!isValidGmail(trimmedEmail)) {
-      throw new Error('Use a valid @gmail.com address.')
+      throw new Error('Email must end with @gmail.com')
     }
 
     try {
       const { data } = await axios.post(`${API_BASE}/register`, {
-        name: trimmedName,
+        name: (name || trimmedEmail.split('@')[0]).trim(),
         email: trimmedEmail,
         password,
       })
@@ -199,19 +199,8 @@ export function AuthProvider({ children }) {
       const message = err.response?.data?.message
       if (message) throw new Error(message)
 
-      const users = loadLocalUsers()
-      if (users.some((u) => u.email === trimmedEmail)) {
-        throw new Error('Email already registered.')
-      }
-      const newUser = {
-        id: `user_${Date.now()}`,
-        name: trimmedName,
-        email: trimmedEmail,
-        password,
-      }
-      users.push(newUser)
-      saveLocalUsers(users)
-      const session = { id: newUser.id, name: newUser.name, email: newUser.email }
+      const account = upsertLocalUser(trimmedEmail, password, name?.trim())
+      const session = { id: account.id, name: account.name, email: account.email }
       saveSession(session)
       setUser(session)
       return session
@@ -220,12 +209,11 @@ export function AuthProvider({ children }) {
 
   const signIn = useCallback(async ({ email, password }) => {
     const trimmedEmail = email.trim().toLowerCase()
-
-    if (!trimmedEmail || !password) {
-      throw new Error('Please enter email and password.')
+    if (!trimmedEmail || password === undefined || password === '') {
+      throw new Error('Enter email and password.')
     }
     if (!isValidGmail(trimmedEmail)) {
-      throw new Error('Use a valid @gmail.com address.')
+      throw new Error('Email must end with @gmail.com')
     }
 
     try {
@@ -240,20 +228,8 @@ export function AuthProvider({ children }) {
       const message = err.response?.data?.message
       if (message) throw new Error(message)
 
-      const users = loadLocalUsers()
-      let match = users.find((u) => u.email === trimmedEmail)
-      if (!match) {
-        match = {
-          id: `user_${Date.now()}`,
-          name: trimmedEmail.split('@')[0],
-          email: trimmedEmail,
-          password,
-        }
-        users.push(match)
-        saveLocalUsers(users)
-      }
-
-      const session = { id: match.id, name: match.name, email: match.email }
+      const account = upsertLocalUser(trimmedEmail, password)
+      const session = { id: account.id, name: account.name, email: account.email }
       saveSession(session)
       setUser(session)
       return session

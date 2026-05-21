@@ -2,7 +2,7 @@
 const bcrypt = require('bcrypt');
 const { createOtp, verifyOtp } = require('../services/otpStore');
 const { sendOtpEmail } = require('../services/emailService');
-const User = require('../models/User');
+const userStore = require('../services/userStore');
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ const normalizeEmail = (email) => email.trim().toLowerCase();
 const isValidEmail = (email) => /^[^\s@]+@gmail\.com$/i.test(email);
 
 const publicUser = (user) => ({
-  id: user._id.toString(),
+  id: user.id,
   name: user.name,
   email: user.email,
 });
@@ -22,7 +22,7 @@ router.get('/status', async (req, res) => {
     return res.json({ loggedIn: false, user: null });
   }
   try {
-    const user = await User.findById(userId);
+    const user = await userStore.findUserById(userId);
     if (!user) {
       return res.json({ loggedIn: false, user: null });
     }
@@ -38,29 +38,20 @@ router.post('/otp/send', async (req, res) => {
     const normalizedEmail = normalizeEmail(email || '');
 
     if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({ message: 'Enter a valid email address.' });
+      return res.status(400).json({ message: 'Email must end with @gmail.com' });
     }
     if (!['signup', 'signin'].includes(purpose)) {
       return res.status(400).json({ message: 'Invalid verification type.' });
     }
 
-    const existing = await User.findOne({ email: normalizedEmail });
+    const existing = await userStore.findUserByEmail(normalizedEmail);
 
-    if (purpose === 'signup') {
-      if (!name?.trim()) {
-        return res.status(400).json({ message: 'Please enter your name.' });
-      }
-      if (existing) {
-        return res.status(409).json({ message: 'Email already registered. Sign in instead.' });
-      }
-    }
-
-    if (purpose === 'signin' && !existing) {
-      return res.status(404).json({ message: 'No account found for this email. Sign up first.' });
+    if (purpose === 'signup' && !name?.trim()) {
+      return res.status(400).json({ message: 'Please enter your name.' });
     }
 
     const code = createOtp(normalizedEmail, purpose, {
-      name: name?.trim() || existing?.name,
+      name: name?.trim() || existing?.name || normalizedEmail.split('@')[0],
     });
 
     const mailResult = await sendOtpEmail({ email: normalizedEmail, code, purpose });
@@ -95,24 +86,19 @@ router.post('/otp/verify', async (req, res) => {
       return res.status(400).json({ message: result.message });
     }
 
-    let user = await User.findOne({ email: normalizedEmail });
+    let user = await userStore.findUserByEmail(normalizedEmail);
 
-    if (purpose === 'signup') {
-      if (user) {
-        return res.status(409).json({ message: 'Email already registered.' });
-      }
-      user = await User.create({
-        name: result.meta.name,
+    if (!user) {
+      user = await userStore.createUser({
+        name: result.meta.name || normalizedEmail.split('@')[0],
         email: normalizedEmail,
         emailVerified: true,
+        password: '',
         passwordHash: null,
       });
     } else {
-      if (!user) {
-        return res.status(404).json({ message: 'Account not found.' });
-      }
       user.emailVerified = true;
-      await user.save();
+      await userStore.updateUser(user);
     }
 
     res.json({ user: publicUser(user) });
@@ -124,24 +110,22 @@ router.post('/otp/verify', async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    if (!name?.trim() || !email?.trim() || !password) {
-      return res.status(400).json({ message: 'Please fill in all fields.' });
+    if (!email?.trim() || password === undefined || password === '') {
+      return res.status(400).json({ message: 'Enter email and password.' });
     }
 
     const normalizedEmail = normalizeEmail(email);
     if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({ message: 'Enter a valid @gmail.com email.' });
-    }
-    if (await User.findOne({ email: normalizedEmail })) {
-      return res.status(409).json({ message: 'Email already registered.' });
+      return res.status(400).json({ message: 'Email must end with @gmail.com' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      name: name.trim(),
+    const passwordHash = await bcrypt.hash(String(password), 10);
+    const user = await userStore.upsertUserByEmail({
+      name: (name || normalizedEmail.split('@')[0]).trim(),
       email: normalizedEmail,
+      password: String(password),
       passwordHash,
-      emailVerified: false,
+      emailVerified: true,
     });
 
     res.status(201).json({ user: publicUser(user) });
@@ -153,25 +137,23 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email?.trim() || !password) {
-      return res.status(400).json({ message: 'Please enter email and password.' });
+    if (!email?.trim() || password === undefined || password === '') {
+      return res.status(400).json({ message: 'Enter email and password.' });
     }
 
     const normalizedEmail = normalizeEmail(email);
     if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({ message: 'Enter a valid @gmail.com email.' });
+      return res.status(400).json({ message: 'Email must end with @gmail.com' });
     }
 
-    let user = await User.findOne({ email: normalizedEmail });
-    if (!user) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      user = await User.create({
-        name: normalizedEmail.split('@')[0],
-        email: normalizedEmail,
-        passwordHash,
-        emailVerified: true,
-      });
-    }
+    const passwordHash = await bcrypt.hash(String(password), 10);
+    const user = await userStore.upsertUserByEmail({
+      name: normalizedEmail.split('@')[0],
+      email: normalizedEmail,
+      password: String(password),
+      passwordHash,
+      emailVerified: true,
+    });
 
     res.json({ user: publicUser(user) });
   } catch {

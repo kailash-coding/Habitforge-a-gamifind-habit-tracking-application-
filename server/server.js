@@ -1,21 +1,17 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
-const mongoose = require('mongoose')
+const connectDB = require('./db')
 
 const app = express()
-
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/habitforge'
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((error) => console.error('MongoDB connection error:', error))
+connectDB()
 
 app.use(cors())
 app.use(express.json())
 
 app.use('/api/habits', require('./routes/habitroutes'))
 app.use('/api/auth', require('./routes/authroutes'))
+app.use('/api/userdata', require('./routes/userdata'))
 
 app.get('/', (req, res) => {
   res.send('HabitForge API Running')
